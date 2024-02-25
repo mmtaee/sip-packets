@@ -3,3 +3,5 @@ go.sum
 .idea
 .code
 TODO.txt
+*.x
+*.json

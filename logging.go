@@ -18,6 +18,8 @@ func levelToText(level int) string {
 		return "INFO"
 	case 2:
 		return "ERROR"
+	case 3:
+		return "WARNING"
 	default:
 		return "INFO"
 
@@ -26,9 +28,9 @@ func levelToText(level int) string {
 
 func logger(logs <-chan logMsg) {
 	for msg := range logs {
-		if verbose {
-			fmt.Printf(logFormat, levelToText(msg.level), time.Now().Format("2006-01-02 15:04:05"), msg.msg)
-		}
+		//if verbose {
+		fmt.Printf(logFormat, levelToText(msg.level), time.Now().Format("2006-01-02 15:04:05"), msg.msg)
+		//}
 	}
 }
 
