@@ -77,7 +77,7 @@ func nonceHeaderCreator(conn Connection, defaultHeader string) string {
 	return defaultHeader
 }
 
-func sendRegister(conn Connection) error {
+func sendRegister(conn Connection) (Connection, error) {
 	var header string
 	for cSeq < 5 {
 		header = defaultRegisterHeaderCreator(conn)
@@ -86,84 +86,36 @@ func sendRegister(conn Connection) error {
 		} else {
 			header += fmt.Sprintf("CSeq: %d REGISTER\r\n", cSeq)
 		}
-		header += "\r\n\r\n"
-		logChan <- logMsg{
-			level: 1,
-			msg:   "Sent Packet Header: \n\t" + strings.Replace(header, "\r\n", "\n\t", -1),
-		}
-		_, err = conn.Write([]byte(header))
-		if err != nil {
-			return err
-		}
-
-		buffer := make([]byte, 1024)
-		var response int
-		response, err = conn.Read(buffer)
-		if err != nil {
-			logChan <- logMsg{
-				level: 3,
-				msg:   fmt.Sprintf("Error reading from response: %s", err),
-			}
-			return err
-		}
-
-		logChan <- logMsg{
-			level: 1,
-			msg:   "Response from server: \n\t" + strings.Replace(string(buffer[:response]), "\r\n", "\n\t", -1),
-		}
-
-		sipResponseString := string(buffer[:response])
-
-		if strings.Contains(string(buffer[:response]), "200 OK") {
-			conn.setResult(2)
+		err = conn.sendRequestToServer(header)
+		if err == nil {
 			break
 		}
-
-		if strings.Contains(string(buffer[:response]), "100 Trying") {
-			logChan <- logMsg{
-				level: 1,
-				msg:   "100 Trying",
-			}
-		}
-
-		if strings.Contains(string(buffer[:response]), "401 Unauthorized") {
-			logChan <- logMsg{
-				level: 1,
-				msg:   "401 Unauthorized",
-			}
-			nonceFinder(sipResponseString)
-			qopFinder(sipResponseString)
-			realmFinder(sipResponseString)
-
-		}
 		cSeq += 1
-		logChan <- logMsg{
-			level: 1,
-			msg:   fmt.Sprintf("retrying cSeq(%d) ...", cSeq),
-		}
 		continue
 	}
 	var finalMsg logMsg
-	if code, text := conn.getResult(); code == 2 {
+	if code, _ := conn.getResult(); code == 2 {
 		finalMsg = logMsg{
 			level: 1,
-			msg:   fmt.Sprintf("User(%s) registered successfully on sip server(%s)", conn.getUsername, flags.uri),
+			msg:   fmt.Sprintf("User(%s) registered successfully on sip server(%s)", conn.Username, flags.uri),
 		}
 	} else {
 		conn.Status = 23
 		finalMsg = logMsg{
 			level: 1,
-			msg: fmt.Sprintf("User(%s) registered failed on sip server(%s) with code: %d[%s]",
-				conn.getUsername, flags.uri,
-				code, text,
+			msg: fmt.Sprintf("User(%s) registered failed on sip server(%s) with result: %s (status: %d)",
+				conn.Username, flags.uri,
+				conn.Status.String(), conn.Status,
 			),
 		}
 	}
 	if flags.verbose {
 		logChan <- finalMsg
+	} else {
+		forceLogger(finalMsg)
 	}
 	if conn.Status == 2 {
-		return nil
+		return conn, nil
 	}
-	return errors.New("registered failed")
+	return conn, errors.New("registered failed")
 }

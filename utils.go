@@ -3,8 +3,11 @@ package main
 import (
 	"crypto/md5"
 	"encoding/hex"
+	"errors"
+	"fmt"
 	"github.com/google/uuid"
 	"math/rand"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -75,5 +78,30 @@ func realmFinder(s string) {
 	realmMatch := realmPattern.FindStringSubmatch(s)
 	if len(realmMatch) > 1 {
 		realm = realmMatch[1]
+	}
+}
+
+func resultOutput(username string, result string) {
+	_, err = os.Stat(flags.output)
+	if errors.Is(err, os.ErrNotExist) {
+		_, err = os.Create(flags.output)
+		if err != nil {
+			logChan <- logMsg{
+				level: 3,
+				msg:   fmt.Sprintf("Error creating output file in path(%s): %s\n", flags.output, err),
+			}
+			return
+		}
+	}
+
+	var file *os.File
+	file, err = os.OpenFile(flags.output, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	_, err = file.WriteString(fmt.Sprintf("%s | %s \n", username, result))
+	if err != nil {
+		logChan <- logMsg{
+			level: 3,
+			msg:   fmt.Sprintf("Error writing in file: %s", err),
+		}
+		return
 	}
 }
