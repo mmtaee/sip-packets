@@ -8,12 +8,12 @@ import (
 	"os"
 )
 
-func parseJsonFile(filePath string) ConnectionList {
+func parseJsonFile(filePath string) []Connection {
 	if errors.Is(err, os.ErrNotExist) {
 		log.Fatal("File Not Found Error!")
 	}
 
-	var jsonConnectionList []connection
+	var jsonConnectionList []Connection
 	var jsonFile *os.File
 
 	jsonFile, err = os.Open(filePath)
@@ -32,11 +32,11 @@ func parseJsonFile(filePath string) ConnectionList {
 		log.Fatal("Error:", err)
 	}
 
-	if verbose {
+	if flags.verbose {
 		for _, user := range jsonConnectionList {
 			logChan <- logMsg{
 				level: 1,
-				msg:   fmt.Sprintf("User(%s) added to list", user.GetObj()),
+				msg:   fmt.Sprintf("User(%s) added to list", user.Username),
 			}
 		}
 	}
@@ -45,11 +45,12 @@ func parseJsonFile(filePath string) ConnectionList {
 		err = file.Close()
 		if err != nil {
 			logChan <- logMsg{
-				level: 3,
+				level: 2,
 				msg:   fmt.Sprintf("Sip users file(%s) closing failed", filePath),
 			}
 		}
 	}(jsonFile)
 
 	return jsonConnectionList
+
 }

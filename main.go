@@ -4,63 +4,63 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"math/rand"
 	"os"
 	"strings"
+	"sync"
 )
 
 type flagType struct {
-	verbose           bool
-	mode              string
-	protocol          string
-	algorithm         string
-	filePath          string
-	sipSimpleUsername string
-	sipSimplePassword string
-	sipSimpleUri      string
-	sipSimplePort     int
-	workers           int
+	verbose   bool
+	strategy  string
+	protocol  string
+	algorithm string
+	filePath  string
+	username  string
+	password  string
+	uri       string
+	port      int
+	workers   int
 }
 
-type ConnectionList []Connection
-
 var (
-	err            error
-	logChan        = make(chan logMsg)
-	connectionList ConnectionList
-	verbose        bool
-	workers        int
+	err         error
+	logChan     = make(chan logMsg)
+	flags       flagType
+	Connections []ConnectionTools
+	clientIP    = getClientIP()
 )
 
 func getFlags(f *flagType) {
-	flag.BoolVar(&f.verbose, "v", false, "Verbose Mode")
-	flag.IntVar(&f.workers, "workers", 1, "Verbose Mode")
-	//flag.StringVar(&f.mode, "mode", "register", "SIP Packet Type(register=1, invite=2)")
-	flag.StringVar(&f.protocol, "protocol", "tcp", "SIP Server Auth Protocol")
-	flag.StringVar(&f.algorithm, "algorithm", "md5", "SIP Server Auth Algorithm(MD5 or MD5-SESS)")
-	flag.StringVar(&f.filePath, "file", "", "SIP Users File Path")
-	flag.StringVar(&f.sipSimpleUsername, "username", "", "SIP username")
-	flag.StringVar(&f.sipSimplePassword, "password", "", "SIP Password")
-	flag.StringVar(&f.sipSimpleUri, "uri", "", "SIP Server Address(uri)")
-	flag.IntVar(&f.sipSimplePort, "port", 5060, "SIP Server Port")
-	flag.Parse()
+	argsError := make([]string, 0, 2)
 
-	verbose = f.verbose
-	workers = f.workers
+	flag.BoolVar(&f.verbose, "v", false, "Verbose Mode")
+	flag.IntVar(&f.workers, "w", 1, "Workers Count")
+	flag.StringVar(&f.strategy, "s", "register", "SIP Packet strategy(register, invite)")
+	flag.StringVar(&f.protocol, "p", "", "SIP Server Auth Protocol")
+	flag.StringVar(&f.algorithm, "a", "", "SIP Server Auth Algorithm(MD5 or MD5-SESS)")
+	flag.StringVar(&f.filePath, "f", "", "SIP Users File Path")
+	flag.StringVar(&f.username, "username", "", "SIP username")
+	flag.StringVar(&f.password, "password", "", "SIP Password")
+	flag.StringVar(&f.uri, "uri", "", "SIP Server Address(uri)")
+	flag.IntVar(&f.port, "port", 5060, "SIP Server Port")
+
+	flag.Parse()
 
 	f.protocol = strings.ToLower(f.protocol)
 	if f.protocol != "tcp" && f.protocol != "udp" {
 		f.protocol = "tcp"
 		logChan <- logMsg{
-			level: 3,
-			msg:   "protocol not valid. set to default(tcp)",
+			level: 2,
+			msg:   "protocol not set or valid. set to default to tcp",
 		}
 	}
 
-	f.mode = strings.ToUpper(f.mode)
-	if !strings.Contains(strings.Join([]string{"REGISTER", "INVITE"}, ","), f.mode) {
-		f.mode = "REGISTER"
+	f.strategy = strings.ToUpper(f.strategy)
+	if !strings.Contains(strings.Join([]string{"REGISTER", "INVITE"}, ","), f.strategy) {
+		f.strategy = "REGISTER"
 		logChan <- logMsg{
-			level: 3,
+			level: 2,
 			msg:   "mode not set. set to default(REGISTER)",
 		}
 	}
@@ -69,20 +69,29 @@ func getFlags(f *flagType) {
 		f.algorithm = "MD5"
 	}
 
+	if f.uri == "" {
+		argsError = append(argsError, "SIP Server Address(uri) is required!")
+	}
+
 	if f.filePath == "" {
-		argsError := make([]string, 0, 3)
-		if f.sipSimpleUsername == "" {
+		if f.username == "" {
 			argsError = append(argsError, "SIP username is required!")
 		}
-		if f.sipSimplePassword == "" {
-			argsError = append(argsError, "SIP password is required!")
-		}
-		if f.sipSimpleUri == "" {
-			argsError = append(argsError, "SIP Server Address(uri) is required!")
-		}
-		if len(argsError) > 0 {
-			note := []string{"\nRequired args:", strings.Join(argsError[:], "\n")}
-			log.Fatal(strings.Join(note[:], "\n"))
+		if f.password == "" {
+			const letterBytes = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890"
+			passwordBytes := make([]byte, 8)
+			for i := range passwordBytes {
+				passwordBytes[i] = letterBytes[rand.Intn(len(letterBytes))]
+			}
+			f.password = string(passwordBytes)
+			logChan <- logMsg{
+				level: 2,
+				msg:   "SIP password is required! Generate random password in progress",
+			}
+			logChan <- logMsg{
+				level: 1,
+				msg:   fmt.Sprintf("SIP password is: %s", f.password),
+			}
 		}
 	} else {
 		if !strings.HasPrefix(f.filePath, "/") {
@@ -91,60 +100,34 @@ func getFlags(f *flagType) {
 			f.filePath = fmt.Sprintf("%s/%s", pwd, f.filePath)
 		}
 	}
+	if len(argsError) > 0 {
+		note := []string{"\nRequired args:", strings.Join(argsError[:], "\n")}
+		log.Fatal(strings.Join(note[:], "\n"))
+	}
 }
 
 func main() {
+
 	go logger(logChan)
 	defer close(logChan)
-	var flags flagType
+
 	getFlags(&flags)
 
-	if flags.filePath == "" {
-		var c Connection = &connection{
-			Username: flags.sipSimpleUsername,
-			Password: flags.sipSimplePassword,
-			Uri:      flags.sipSimpleUri,
-			Port:     flags.sipSimplePort,
-			Protocol: flags.protocol,
-		}
+	var connectionList []Connection
 
+	if flags.filePath == "" {
+		c := Connection{
+			Username: flags.username,
+			Password: flags.password,
+		}
 		connectionList = append(connectionList, c)
 	} else {
 		connectionList = parseJsonFile(flags.filePath)
 	}
 
-	validateConnectionsCh := validateConnections(connectionList)
-
-	for i := range validateConnectionsCh {
-		// TODO: send to proxy function to send request in new go routines
-		if i.GetObj().InviteDest != nil {
-			fmt.Println(*i.GetObj().InviteDest)
-		}
-	}
-
-	//for _, conn := range connectionList {
-	//
-	//}
-
-	//	if protocol == "tcp" {
-	//		err = socket.tcpDial()
-	//		if err != nil {
-	//			log.Fatal(fmt.Sprintf("Can not OPen client TCP socket in %s", clientIP))
-	//		}
-	//	} else {
-	//		err = socket.udpDial()
-	//		if err != nil {
-	//			log.Fatal(fmt.Sprintf("Can not OPen client UDP socket in %s", clientIP))
-	//		}
-	//	}
-	//
-	//	if mode == "REGISTER" {
-	//		logChan <- logMsg{
-	//			level: 1,
-	//			msg:   fmt.Sprintf("Starting send register packets with connection(%s)", protocol),
-	//		}
-	//		sendRegister(socket)
-	//	}
-	//}
+	validConnectionCh := validateConnectionCh(connectionList)
+	progressConnectionCh := connectionStatus(validConnectionCh)
+	var wg sync.WaitGroup
+	__sendToStrategy(progressConnectionCh, &wg)
 
 }

@@ -11,56 +11,72 @@ var (
 	timeout = 10 * time.Second
 )
 
-type resultStatus int
+type Status int
 
-func (r resultStatus) String() string {
+func (r Status) String() string {
 	switch r {
 	case 0:
 		return "In Progress"
-	case 200:
-		return "Success"
-	case 401:
-		return "Unauthorized"
-	case 100:
-		return "Trying"
-	case 429:
-		return "Too Many Requests"
-	case 404:
-		return "Not Found"
-	case 403:
-		return "Forbidden"
+	case 1:
+		return "100 Trying"
+	case 2:
+		return "200 Success"
+	case 3:
+		return "401 Unauthorized"
+
+	case 4:
+		return "429 Too Many Requests"
+	case 5:
+		return "404 Not Found"
+	case 6:
+		return "403 Forbidden"
+	case 20:
+		return "Failed To Open Connection"
+	case 21:
+		return "Preparing Request"
+	case 23:
+		return "Failed"
 	default:
 		return "Unknown"
 	}
 }
 
-type connection struct {
-	TCPConn           *net.TCPConn
-	UDPConn           *net.UDPConn
-	Username          string       `json:"username"`
-	Password          string       `json:"password"`
-	Uri               string       `json:"uri"`
-	Port              int          `json:"port"`
-	Protocol          string       `json:"protocol"`
-	InviteDest        *string      `json:"invite_dest"` // use for invite request for call
-	Result            resultStatus `json:"-"`
-	IsTCP             bool         `json:"-"`
-	ClientIP          string       `json:"-"`
-	ClientPort        int          `json:"-"`
-	IsRegisterRequest bool         `json:"-"`
+type Connection struct {
+	TCPConn    *net.TCPConn
+	UDPConn    *net.UDPConn
+	Username   string `json:"username"`
+	Password   string `json:"password"`
+	IsTCP      bool   `json:"-"`
+	Status     Status `json:"-"`
+	ClientPort int    `json:"-"`
 }
 
-type Connection interface {
+type ConnectionTools interface {
 	UDPDial() error
 	TCPDial() error
 	Read(b []byte) (int, error)
 	Write(b []byte) (int, error)
 	Close() error
-	GetObj() *connection
+	setResult(int)
+	getResult() (Status, string)
+	getUsername() string
+	getObj() *Connection
 }
 
-func (c *connection) GetObj() *connection {
+func (c *Connection) getObj() *Connection {
 	return c
+}
+
+func (c *Connection) setResult(i int) {
+	c.Status = Status(i)
+}
+
+func (c *Connection) getResult() (Status, string) {
+	return c.Status, c.Status.String()
+}
+
+func (c *Connection) getUsername() string {
+	return c.Username
 }
 
 func getClientIP() string {
@@ -73,7 +89,7 @@ func getClientIP() string {
 		err = s.Close()
 		if err != nil {
 			logChan <- logMsg{
-				level: 2,
+				level: 3,
 				msg:   "Failed to close socket connection",
 			}
 		}
@@ -81,42 +97,42 @@ func getClientIP() string {
 	return s.LocalAddr().(*net.UDPAddr).IP.String()
 }
 
-func (c *connection) UDPDial() error {
+func (c *Connection) UDPDial() error {
 	var udpLocalAddr *net.UDPAddr
-	udpLocalAddr, err = net.ResolveUDPAddr("udp", fmt.Sprintf("%s:%d", c.ClientIP, c.ClientPort))
+	udpLocalAddr, err = net.ResolveUDPAddr("udp", fmt.Sprintf("%s:%d", clientIP, 0))
 	var udpSipAddr *net.UDPAddr
-	udpSipAddr, err = net.ResolveUDPAddr("udp", fmt.Sprintf("%s:%d", c.Uri, c.Port))
+	udpSipAddr, err = net.ResolveUDPAddr("udp", fmt.Sprintf("%s:%d", flags.uri, flags.port))
 	if err != nil {
-		logChan <- logMsg{
-			level: 2,
-			msg:   fmt.Sprintf("Error resolving TCP address: %s", err),
-		}
+		//logChan <- logMsg{
+		//	level: 3,
+		//	msg:   fmt.Sprintf("Error resolving TCP address: %s", err),
+		//}
 		return err
 	}
-	logChan <- logMsg{
-		level: 1,
-		msg:   fmt.Sprintf("Server Socket UDP Address: %s", udpSipAddr),
-	}
+	//logChan <- logMsg{
+	//	level: 1,
+	//	msg:   fmt.Sprintf("Server Socket UDP Address: %s", udpSipAddr),
+	//}
 	var conn *net.UDPConn
 	conn, err = net.DialUDP("udp", udpLocalAddr, udpSipAddr)
 	if err != nil {
-		logChan <- logMsg{
-			level: 2,
-			msg:   fmt.Sprintf("Error binding to UDP address: %s", err),
-		}
+		//logChan <- logMsg{
+		//	level: 3,
+		//	msg:   fmt.Sprintf("Error binding to UDP address: %s", err),
+		//}
 		return err
 	}
 	c.ClientPort = conn.LocalAddr().(*net.UDPAddr).Port
-	logChan <- logMsg{
-		level: 1,
-		msg:   fmt.Sprintf("Client Socket UDP Address: %s:%d", c.ClientIP, c.ClientPort),
-	}
+	//logChan <- logMsg{
+	//	level: 1,
+	//	msg:   fmt.Sprintf("Client Socket UDP Address: %s:%d", clientIP, c.ClientPort),
+	//}
 	err = conn.SetDeadline(time.Now().Add(timeout))
 	if err != nil {
-		logChan <- logMsg{
-			level: 2,
-			msg:   fmt.Sprintf("Error setting UDP connection timeout: %s", err),
-		}
+		//logChan <- logMsg{
+		//	level: 3,
+		//	msg:   fmt.Sprintf("Error setting UDP connection timeout: %s", err),
+		//}
 		return err
 	}
 	c.IsTCP = false
@@ -124,14 +140,14 @@ func (c *connection) UDPDial() error {
 	return nil
 }
 
-func (c *connection) TCPDial() error {
+func (c *Connection) TCPDial() error {
 	var tcpLocalAddr *net.TCPAddr
-	tcpLocalAddr, err = net.ResolveTCPAddr("tcp", fmt.Sprintf("%s:%d", c.ClientIP, c.ClientPort))
+	tcpLocalAddr, err = net.ResolveTCPAddr("tcp", fmt.Sprintf("%s:%d", clientIP, 0))
 	var tcpSipAddr *net.TCPAddr
-	tcpSipAddr, err = net.ResolveTCPAddr("tcp", fmt.Sprintf("%s:%d", c.Uri, c.Port))
+	tcpSipAddr, err = net.ResolveTCPAddr("tcp", fmt.Sprintf("%s:%d", flags.uri, flags.port))
 	if err != nil {
 		logChan <- logMsg{
-			level: 2,
+			level: 3,
 			msg:   fmt.Sprintf("Error resolving TCP address: %s", err),
 		}
 		return err
@@ -144,7 +160,7 @@ func (c *connection) TCPDial() error {
 	conn, err = net.DialTCP("tcp", tcpLocalAddr, tcpSipAddr)
 	if err != nil {
 		logChan <- logMsg{
-			level: 2,
+			level: 3,
 			msg:   fmt.Sprintf("Error binding to TCP address: %s", err),
 		}
 		return err
@@ -152,74 +168,75 @@ func (c *connection) TCPDial() error {
 	c.ClientPort = conn.LocalAddr().(*net.TCPAddr).Port
 	logChan <- logMsg{
 		level: 1,
-		msg:   fmt.Sprintf("Client Socket TCP Address: %s:%d", c.ClientIP, c.ClientPort),
+		msg:   fmt.Sprintf("Client Socket TCP Address: %s:%d", clientIP, c.ClientPort),
 	}
 	err = conn.SetDeadline(time.Now().Add(timeout))
 	if err != nil {
 		logChan <- logMsg{
-			level: 2,
+			level: 3,
 			msg:   fmt.Sprintf("Error setting UDP connection timeout: %s", err),
 		}
 		return err
 	}
 	c.IsTCP = true
 	c.TCPConn = conn
-
 	return nil
 }
 
-func (c *connection) Read(b []byte) (int, error) {
+func (c *Connection) Read(b []byte) (int, error) {
 	if c.IsTCP {
 		return c.TCPConn.Read(b)
 	}
 	return c.UDPConn.Read(b)
 }
 
-func (c *connection) Write(b []byte) (int, error) {
+func (c *Connection) Write(b []byte) (int, error) {
 	if c.IsTCP {
 		return c.TCPConn.Write(b)
 	}
 	return c.UDPConn.Write(b)
 }
 
-func (c *connection) Close() error {
+func (c *Connection) Close() error {
 	if c.IsTCP {
 		return c.TCPConn.Close()
 	}
 	return c.UDPConn.Close()
 }
 
-func validateConnections(conn ConnectionList) <-chan Connection {
+func validateConnectionCh(conn []Connection) <-chan Connection {
+	out := make(chan Connection)
+	go func() {
+		for _, c := range conn {
+			var err error
+			if flags.protocol == "udp" {
+				c.IsTCP = false
+				err = c.UDPDial()
+			} else {
+				c.IsTCP = true
+				err = c.TCPDial()
+			}
+			if err != nil {
+				c.Status = 20
+				continue
+			}
+			out <- c
+		}
+		close(out)
+	}()
+	return out
+}
+
+func connectionStatus(in <-chan Connection) <-chan Connection {
 	var wg sync.WaitGroup
 	out := make(chan Connection)
 
-	wg.Add(workers)
-	for i := 0; i < workers; i++ {
+	wg.Add(flags.workers)
+	for i := 0; i < flags.workers; i++ {
 		go func() {
-			for _, c := range conn {
-				obj := c.GetObj()
-				obj.ClientIP = getClientIP()
-				obj.ClientPort = 0
-				if obj.InviteDest == nil {
-					obj.IsRegisterRequest = true
-				} else {
-					obj.IsRegisterRequest = false
-				}
-				if obj.Protocol == "udp" {
-					obj.IsTCP = false
-					err = c.UDPDial()
-					if err != nil {
-						continue
-					}
-				} else {
-					obj.Protocol = "tcp"
-					obj.IsTCP = true
-					err = c.TCPDial()
-					if err != nil {
-						continue
-					}
-				}
-				out <- c
+			for o := range in {
+				o.Status = 21
+				out <- o
 			}
 			wg.Done()
 		}()
