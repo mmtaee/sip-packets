@@ -79,6 +79,7 @@ func nonceHeaderCreator(conn Connection, defaultHeader string) string {
 
 func sendRegister(conn Connection) (Connection, error) {
 	var header string
+	cSeq = 0
 	for cSeq < 5 {
 		header = defaultRegisterHeaderCreator(conn)
 		if nonce != "" {
@@ -87,11 +88,10 @@ func sendRegister(conn Connection) (Connection, error) {
 			header += fmt.Sprintf("CSeq: %d REGISTER\r\n", cSeq)
 		}
 		err = conn.sendRequestToServer(header)
-		if err == nil {
+		if err != nil {
 			break
 		}
 		cSeq += 1
-		continue
 	}
 	var finalMsg logMsg
 	if code, _ := conn.getResult(); code == 2 {

@@ -35,7 +35,7 @@ func defaultInviteHeaderCreator(conn Connection) string {
 			"Allow: INVITE, ACK, OPTIONS, CANCEL, BYE, SUBSCRIBE, NOTIFY, INFO, REFER, UPDATE, MESSAGE\r\n"+
 			"Content-Type: application/sdp\r\n"+
 			"Accept: application/sdp, application/dtmf-relay\r\n"+
-			"Content-Length:   282", conn.Username, flags.uri,
+			"Content-Length:   282\r\n", conn.Username, flags.uri,
 	)
 
 	return invite + via + from + to + useragent
@@ -43,11 +43,18 @@ func defaultInviteHeaderCreator(conn Connection) string {
 
 func sendInvite(conn Connection) (Connection, error) {
 	var header string
-	for cSeq < 1 {
-		header = defaultRegisterHeaderCreator(conn)
+	for cSeq < 3 {
+		header = defaultInviteHeaderCreator(conn)
+		if nonce != "" {
+			header = nonceHeaderCreator(conn, header)
+		}
+		if conn.Status == 3 {
+			//header = defaultRegisterHeaderCreator(conn)
+			//header = nonceHeaderCreator(conn, header)
+			//header += fmt.Sprintf("CSeq: %d REGISTER\r\n", cSeq)
+		}
 		err = conn.sendRequestToServer(header)
-
-		if err == nil {
+		if err != nil {
 			break
 		}
 		cSeq += 1

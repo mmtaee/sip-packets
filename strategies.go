@@ -20,11 +20,11 @@ func (r *Request) setStrategy(s Strategy) {
 }
 
 func (r *Request) startStrategy(conn Connection) (Connection, error) {
-	return sendInvite(conn)
+	return r.strategy.Send(conn)
 }
 
 func (i *InviteStrategy) Send(conn Connection) (Connection, error) {
-	return conn, nil
+	return sendInvite(conn)
 }
 
 func (r *RegisterStrategy) Send(conn Connection) (Connection, error) {

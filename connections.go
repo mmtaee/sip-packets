@@ -53,6 +53,10 @@ type Connection struct {
 }
 
 func (c *Connection) sendRequestToServer(header string) error {
+	logChan <- logMsg{
+		level: 1,
+		msg:   fmt.Sprintf("retrying cSeq(%d) ...", cSeq),
+	}
 	header += "\r\n\r\n"
 	logChan <- logMsg{
 		level: 1,
@@ -73,13 +77,12 @@ func (c *Connection) sendRequestToServer(header string) error {
 		}
 		return err
 	}
+	sipResponseString := string(buffer[:response])
 
 	logChan <- logMsg{
 		level: 1,
-		msg:   "Response from server: \n\t" + strings.Replace(string(buffer[:response]), "\r\n", "\n\t", -1),
+		msg:   "Response from server: \n\t" + strings.Replace(sipResponseString, "\r\n", "\n\t", -1),
 	}
-
-	sipResponseString := string(buffer[:response])
 
 	if strings.Contains(string(buffer[:response]), "200 OK") {
 		c.setResult(2)
@@ -91,6 +94,8 @@ func (c *Connection) sendRequestToServer(header string) error {
 			level: 1,
 			msg:   "100 Trying",
 		}
+		c.setResult(1)
+		return nil
 	}
 
 	if strings.Contains(string(buffer[:response]), "401 Unauthorized") {
@@ -101,10 +106,8 @@ func (c *Connection) sendRequestToServer(header string) error {
 		nonceFinder(sipResponseString)
 		qopFinder(sipResponseString)
 		realmFinder(sipResponseString)
-	}
-	logChan <- logMsg{
-		level: 1,
-		msg:   fmt.Sprintf("retrying cSeq(%d) ...", cSeq+1),
+		c.setResult(3)
+		return nil
 	}
 	return errors.New("request Failed")
 }
