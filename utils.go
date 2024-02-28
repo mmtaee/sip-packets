@@ -16,13 +16,15 @@ import (
 var (
 	nonce      string
 	realm      string
-	cSeq       = 0
+	cSeq       = 1
+	cSeqText   = "REGISTER"
 	callID     = uuid.New()
 	branch     = createBranch()
 	tag        = createTag()
 	cnonce     = createCNonce()
 	qop        string
 	nonceCount = "00000001"
+	route      string
 )
 
 func createBranch() string {
@@ -103,5 +105,21 @@ func resultOutput(username string, result string) {
 			msg:   fmt.Sprintf("Error writing in file: %s", err),
 		}
 		return
+	}
+}
+
+func cSeqTextFinder(s string) {
+	cSeqTextPattern := regexp.MustCompile(`CSeq: \d+ (\w+)`)
+	cSeqTextMatch := cSeqTextPattern.FindStringSubmatch(s)
+	if len(cSeqTextMatch) > 1 {
+		cSeqText = cSeqTextMatch[1]
+	}
+}
+
+func routeFinder(s string) {
+	routePattern := regexp.MustCompile(`Record-Route: (.*)`)
+	routePatternMatch := routePattern.FindStringSubmatch(s)
+	if len(routePatternMatch) > 1 {
+		route = routePatternMatch[1]
 	}
 }

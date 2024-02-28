@@ -31,6 +31,12 @@ func (r Status) String() string {
 		return "404 Not Found"
 	case 6:
 		return "403 Forbidden"
+	case 7:
+		return "200 ACK"
+	case 8:
+		return "183 Session Progress"
+	case 9:
+		return "200 Canceled"
 	case 20:
 		return "20 Failed To Open Connection"
 	case 21:
@@ -84,12 +90,23 @@ func (c *Connection) sendRequestToServer(header string) error {
 		msg:   "Response from server: \n\t" + strings.Replace(sipResponseString, "\r\n", "\n\t", -1),
 	}
 
-	if strings.Contains(string(buffer[:response]), "200 OK") {
+	cSeqTextFinder(sipResponseString)
+
+	fmt.Println(cSeqText)
+
+	sipResponseStringLower := strings.ToLower(sipResponseString)
+
+	if strings.Contains(sipResponseStringLower, "200 ok") {
 		c.setResult(2)
 		return nil
 	}
 
-	if strings.Contains(string(buffer[:response]), "100 Trying") {
+	if strings.Contains(sipResponseStringLower, "200 canceling") {
+		c.setResult(9)
+		return nil
+	}
+
+	if strings.Contains(sipResponseStringLower, "100 trying") {
 		logChan <- logMsg{
 			level: 1,
 			msg:   "100 Trying",
@@ -98,7 +115,14 @@ func (c *Connection) sendRequestToServer(header string) error {
 		return nil
 	}
 
-	if strings.Contains(string(buffer[:response]), "401 Unauthorized") {
+	fmt.Println("401 unauthorized: ", strings.Contains(sipResponseStringLower, "401 unauthorized"))
+	fmt.Println("401 Unauthorized: ", strings.Contains(sipResponseString, "401 Unauthorized"))
+	fmt.Println("200 ok: ", strings.Contains(sipResponseStringLower, "200 ok"))
+	fmt.Println("200 canceling: ", strings.Contains(sipResponseStringLower, "200 canceling"))
+	fmt.Println("100 trying: ", strings.Contains(sipResponseStringLower, "100 trying"))
+	fmt.Println("183 session progress: ", strings.Contains(sipResponseStringLower, "183 session progress"))
+
+	if strings.Contains(sipResponseStringLower, "401 unauthorized") {
 		logChan <- logMsg{
 			level: 1,
 			msg:   "401 Unauthorized",
@@ -107,8 +131,16 @@ func (c *Connection) sendRequestToServer(header string) error {
 		qopFinder(sipResponseString)
 		realmFinder(sipResponseString)
 		c.setResult(3)
+		fmt.Println("in 401 unauthorized")
+		fmt.Println("********************\n\n")
 		return nil
 	}
+
+	if strings.Contains(sipResponseStringLower, "183 session progress") {
+		routeFinder(sipResponseString)
+		c.setResult(8)
+	}
+
 	return errors.New("request Failed")
 }
 

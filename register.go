@@ -46,7 +46,7 @@ func defaultRegisterHeaderCreator(conn Connection) string {
 	)
 	to := fmt.Sprintf(
 		"To: <sip:%s@%s>\r\nContact: <sip:%s@%s:%d;"+
-			"transport=%s>\r\nExpires: 0\r\n"+
+			"transport=%s>\r\nExpires: 30\r\n"+
 			"Call-ID: %s\r\nAccept: application/sdp\r\nContent-Length: 0\r\n",
 		conn.Username, flags.uri, conn.Username, clientIP, conn.ClientPort, flags.protocol, callID,
 	)
@@ -56,11 +56,15 @@ func defaultRegisterHeaderCreator(conn Connection) string {
 func nonceHeaderCreator(conn Connection, defaultHeader string) string {
 	var authorization string
 	responseHash := makeRegisterPacketHash(conn)
-	defaultHeader += fmt.Sprintf("CSeq: %d REGISTER\r\n", cSeq)
+	uri := flags.uri
+	if flags.strategy == "INVITE" {
+		uri = fmt.Sprintf("%s@%s", flags.inviteNumber, flags.uri)
+	}
+	defaultHeader += fmt.Sprintf("CSeq: %d %s\r\n", cSeq, flags.strategy)
 	if qop != "" {
 		authorization = fmt.Sprintf("Authorization:  Digest realm=\"%s\", nonce=\"%s\","+
-			" username=\"%s\", uri=\"sip:%s\", response=\"%s\", nc=%s",
-			realm, nonce, conn.Username, flags.uri, responseHash, nonceCount,
+			" username=\"%s\", uri=\"sip:%s\", response=\"%s\", nc=%s, algorithm=%s",
+			realm, nonce, conn.Username, uri, responseHash, nonceCount, flags.algorithm,
 		)
 		if cnonce != "" {
 			authorization += fmt.Sprintf(", cnonce=\"%s\"", cnonce)
@@ -69,10 +73,11 @@ func nonceHeaderCreator(conn Connection, defaultHeader string) string {
 	} else {
 		authorization = fmt.Sprintf(
 			"Authorization:  Digest realm=\"%s\", username=\"%s\", "+
-				"response=\"%s\", nonce=\"%s\", uri=\"sip:%s\"",
-			realm, conn.Username, responseHash, nonce, flags.uri,
+				"response=\"%s\", nonce=\"%s\", uri=\"sip:%s\", algorithm=%s",
+			realm, conn.Username, responseHash, nonce, uri, flags.algorithm,
 		)
 	}
+
 	defaultHeader += authorization
 	return defaultHeader
 }
@@ -85,10 +90,10 @@ func sendRegister(conn Connection) (Connection, error) {
 		if nonce != "" {
 			header = nonceHeaderCreator(conn, header)
 		} else {
-			header += fmt.Sprintf("CSeq: %d REGISTER\r\n", cSeq)
+			header += fmt.Sprintf("CSeq: %d %s\r\n", cSeq, cSeqText)
 		}
 		err = conn.sendRequestToServer(header)
-		if err != nil {
+		if err != nil || conn.Status == 2 {
 			break
 		}
 		cSeq += 1

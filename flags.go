@@ -29,7 +29,7 @@ func getFlags(f *flagType) {
 	flag.BoolVar(&f.verbose, "v", false, "Verbose Mode")
 
 	flag.StringVar(&f.strategy, "s", "register", "SIP Packet strategy(register, invite)")
-	flag.StringVar(&f.inviteNumber, "number", "+11111111111", "Invite Number")
+	flag.StringVar(&f.inviteNumber, "number", "11111111111", "Invite Number")
 
 	flag.StringVar(&f.protocol, "p", "", "SIP Server Auth Protocol")
 	flag.StringVar(&f.algorithm, "a", "", "SIP Server Auth Algorithm(MD5 or MD5-SESS)")
@@ -62,11 +62,13 @@ func getFlags(f *flagType) {
 		}
 	}
 
-	if f.strategy == "INVITE" &&
-		!strings.HasPrefix(f.inviteNumber, "+") &&
-		!strings.HasPrefix(f.inviteNumber, "00") &&
-		!strings.HasPrefix(f.inviteNumber, "0") {
-		f.inviteNumber = "+" + f.inviteNumber
+	if f.strategy == "INVITE" {
+		//if !strings.HasPrefix(f.inviteNumber, "+") &&
+		//	!strings.HasPrefix(f.inviteNumber, "00") &&
+		//	!strings.HasPrefix(f.inviteNumber, "0") {
+		//	f.inviteNumber = "+" + f.inviteNumber
+		//}
+		cSeqText = "INVITE"
 	}
 
 	if f.algorithm != "MD5" && f.algorithm != "MD5-SESS" {
